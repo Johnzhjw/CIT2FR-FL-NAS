@@ -133,6 +133,10 @@ class LC25000DataProvider(DataProvider):
         return 'LC25000'
 
     @property
+    def n_channels(self):
+        return 3
+
+    @property
     def data_shape(self):
         return 3, self.active_img_size, self.active_img_size  # C, H, W
 

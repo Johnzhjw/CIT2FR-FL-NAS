@@ -17,7 +17,8 @@ from ofa.imagenet_codebase.utils import make_divisible, int2list
 class OFAMobileNetV3(MobileNetV3):
 
     def __init__(self, n_classes=1000, bn_param=(0.1, 1e-5), dropout_rate=0.1, base_stage_width=None,
-                 width_mult_list=1.0, ks_list=3, expand_ratio_list=6, depth_list=4, flag_fuzzy=False):
+                 width_mult_list=1.0, ks_list=3, expand_ratio_list=6, depth_list=4, flag_fuzzy=False,
+                 n_channel_in=3, flag_not_image=False):
 
         self.width_mult_list = int2list(width_mult_list, 1)
         self.ks_list = int2list(ks_list, 1)
@@ -70,19 +71,24 @@ class OFAMobileNetV3(MobileNetV3):
 
         input_channel = width_list[0]
         # first conv layer
+        ks_first = 3
+        st_first = 2
+        if flag_not_image:
+            ks_first = 1
+            st_first = 1
         if len(set(input_channel)) == 1:
-            first_conv = ConvLayer(3, max(input_channel), kernel_size=3, stride=2, act_func='h_swish')
+            first_conv = ConvLayer(n_channel_in, max(input_channel), kernel_size=ks_first, stride=st_first, act_func='h_swish')
             first_block_conv = MBInvertedConvLayer(
-                in_channels=max(input_channel), out_channels=max(input_channel), kernel_size=3, stride=stride_stages[0],
+                in_channels=max(input_channel), out_channels=max(input_channel), kernel_size=ks_first, stride=stride_stages[0],
                 expand_ratio=1, act_func=act_stages[0], use_se=se_stages[0],
             )
         else:
             first_conv = DynamicConvLayer(
-                in_channel_list=int2list(3, len(input_channel)), out_channel_list=input_channel, kernel_size=3,
-                stride=2, act_func='h_swish',
+                in_channel_list=int2list(n_channel_in, len(input_channel)), out_channel_list=input_channel, kernel_size=ks_first,
+                stride=st_first, act_func='h_swish',
             )
             first_block_conv = DynamicMBConvLayer(
-                in_channel_list=input_channel, out_channel_list=input_channel, kernel_size_list=3, expand_ratio_list=1,
+                in_channel_list=input_channel, out_channel_list=input_channel, kernel_size_list=ks_first, expand_ratio_list=1,
                 stride=stride_stages[0], act_func=act_stages[0], use_se=se_stages[0],
             )
         first_block = MobileInvertedResidualBlock(first_block_conv, IdentityLayer(input_channel, input_channel))

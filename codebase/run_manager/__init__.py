@@ -14,6 +14,7 @@ from codebase.data_providers.dtd import *
 from codebase.data_providers.pets import *
 from codebase.data_providers.aircraft import *
 from codebase.data_providers.LC25000 import *
+from codebase.data_providers.table_csv import TableDataProvider
 
 from run_manager import RunConfig
 
@@ -337,6 +338,47 @@ class LC25000RunConfig(RunConfig):
         return self.__dict__['_data_provider']
 
 
+class TableRunConfig(RunConfig):
+
+    def __init__(self, n_epochs=1, init_lr=0.05, lr_schedule_type='cosine', lr_schedule_param=None,
+                 dataset='LC25000', train_batch_size=32, test_batch_size=250, valid_size=None,
+                 opt_type='sgd', opt_param=None, weight_decay=4e-5, label_smoothing=0.0, no_decay_keys=None,
+                 mixup_alpha=None,
+                 model_init='he_fout', validation_frequency=1, print_frequency=10,
+                 n_worker=32, resize_scale=0.08, distort_color='tf', image_size=224,
+                 data_path='/mnt/datastore/LC25000', flag_FL=False, size_FL=0,
+                 **kwargs):
+        super(TableRunConfig, self).__init__(
+            n_epochs, init_lr, lr_schedule_type, lr_schedule_param,
+            dataset, train_batch_size, test_batch_size, valid_size,
+            opt_type, opt_param, weight_decay, label_smoothing, no_decay_keys,
+            mixup_alpha,
+            model_init, validation_frequency, print_frequency
+        )
+        self.n_worker = n_worker
+        self.resize_scale = resize_scale
+        self.distort_color = distort_color
+        self.image_size = image_size
+        self.data_path = data_path
+        self.flag_FL = flag_FL
+        self.size_FL = size_FL
+
+    @property
+    def data_provider(self):
+        if self.__dict__.get('_data_provider', None) is None:
+            if self.dataset == TableDataProvider.name():
+                DataProviderClass = TableDataProvider
+            else:
+                raise NotImplementedError
+            self.__dict__['_data_provider'] = DataProviderClass(
+                save_path=self.data_path,
+                train_batch_size=self.train_batch_size, test_batch_size=self.test_batch_size,
+                valid_size=self.valid_size, n_worker=self.n_worker, resize_scale=self.resize_scale,
+                distort_color=self.distort_color, image_size=self.image_size, flag_FL=self.flag_FL, size_FL=self.size_FL
+            )
+        return self.__dict__['_data_provider']
+
+
 def get_run_config(**kwargs):
     if kwargs['dataset'] == 'imagenet':
         run_config = ImagenetRunConfig(**kwargs)
@@ -354,6 +396,8 @@ def get_run_config(**kwargs):
         run_config = AircraftRunConfig(**kwargs)
     elif kwargs['dataset'] == 'LC25000':
         run_config = LC25000RunConfig(**kwargs)
+    elif kwargs['dataset'] == 'Table_csv':
+        run_config = TableRunConfig(**kwargs)
     else:
         raise NotImplementedError
 

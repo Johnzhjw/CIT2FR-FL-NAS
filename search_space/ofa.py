@@ -2,13 +2,19 @@ import numpy as np
 
 
 class OFASearchSpace:
-    def __init__(self):
+    def __init__(self, flag_not_image=False):
         # self.num_blocks = 5  # number of blocks
         self.num_blocks = 2  # number of blocks
-        self.kernel_size = [3, 5, 7]  # depth-wise conv kernel size
+        if flag_not_image:
+            self.kernel_size = [1]  # depth-wise conv kernel size
+        else:
+            self.kernel_size = [3, 5, 7]  # depth-wise conv kernel size
         self.exp_ratio = [1, 2, 3, 4]  # expansion rate
         self.depth = [1, 2, 3, 4]  # number of Inverted Residual Bottleneck layers repetition
-        self.resolution = list(range(128, 257, 4))  # input image resolutions
+        if flag_not_image:
+            self.resolution = [1]  # input image resolutions
+        else:
+            self.resolution = list(range(128, 257, 4))  # input image resolutions
         self.fuzzy = [0, 1]
 
     def sample(self, n_samples=1, nb=None, ks=None, e=None, d=None, r=None, f=None):

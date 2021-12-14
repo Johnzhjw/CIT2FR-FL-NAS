@@ -18,7 +18,7 @@ DEFAULT_CFG = {
     'gpus': '0', 'config': None, 'init': None, 'trn_batch_size': 128, 'vld_batch_size': 250, 'num_workers': 4,
     'n_epochs': 0, 'save': None, 'resolution': 224, 'valid_size': 10000, 'test': False, 'latency': None,
     'verbose': False, 'classifier_only': False, 'reset_running_statistics': True, 'flag_fuzzy': False,
-    'flag_FL': False, 'size_FL': 3, 'str_time': None
+    'flag_FL': False, 'size_FL': 3, 'str_time': None, 'ignore_weights': False, 'flag_not_image': False
 }
 
 
@@ -40,6 +40,7 @@ def bash_command_template(**kwargs):
     cfg['dataset'] = kwargs['dataset']
     cfg['n_classes'] = kwargs['n_classes']
     cfg['supernet_path'] = kwargs['supernet_path']
+    cfg['ignore_weights'] = kwargs.pop('ignore_weights', DEFAULT_CFG['ignore_weights'])
     cfg['config'] = kwargs.pop('config', DEFAULT_CFG['config'])
     cfg['init'] = kwargs.pop('init', DEFAULT_CFG['init'])
     cfg['save'] = kwargs.pop('save', DEFAULT_CFG['save'])
@@ -57,6 +58,7 @@ def bash_command_template(**kwargs):
     cfg['flag_FL'] = kwargs.pop('flag_FL', DEFAULT_CFG['flag_FL'])
     cfg['size_FL'] = kwargs.pop('size_FL', DEFAULT_CFG['size_FL'])
     cfg['str_time'] = kwargs.pop('str_time', DEFAULT_CFG['str_time'])
+    cfg['flag_not_image'] = kwargs.pop('flag_not_image', DEFAULT_CFG['flag_not_image'])
     cfg['reset_running_statistics'] = kwargs.pop(
         'reset_running_statistics', DEFAULT_CFG['reset_running_statistics'])
 
@@ -224,6 +226,8 @@ def look_up_latency(net, lut, resolution=224):
         [1, 1, net.feature_mix_layer.out_channels]
     )
 
+    # TODO: the fuzzy rough layer
+
     # classifier
     predicted_latency += lut.predict(
         'classifier',
@@ -260,7 +264,7 @@ def get_net_info(net, input_shape=(3, 224, 224), measure_latency=None, print_inf
     from ofa.imagenet_codebase.utils.pytorch_utils import count_parameters, measure_net_latency
 
     # artificial input data
-    inputs = torch.randn(1, 3, input_shape[-2], input_shape[-1])
+    inputs = torch.randn(1, input_shape[-3], input_shape[-2], input_shape[-1])
 
     # move network to GPU if available
     if torch.cuda.is_available():

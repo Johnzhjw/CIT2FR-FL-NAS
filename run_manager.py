@@ -148,7 +148,7 @@ def get_net_info(net, input_shape=(3, 224, 224), measure_latency=None, print_inf
     net_info['params'] = count_parameters(net)
 
     # flops
-    net_info['flops'] = count_net_flops(net, [1] + list(input_shape))
+    net_info['flops'] = count_net_flops(net, [2] + list(input_shape))/2
 
     # latencies
     latency_types = [] if measure_latency is None else measure_latency.split('#')
@@ -408,21 +408,19 @@ class RunManager:
                     images, labels = images.to(self.device), labels.to(self.device)
                     # compute output
                     output = net(images)
-                    loss = self.test_criterion(output, labels)
+                    loss = self.test_criterion(output, labels.long())
                     # measure accuracy and record loss
-                    acc1, acc5 = accuracy(output, labels, topk=(1, 5))
+                    acc1 = accuracy(output, labels, topk=(1,))
 
                     losses.update(loss.item(), images.size(0))
                     top1.update(acc1[0].item(), images.size(0))
-                    top5.update(acc5[0].item(), images.size(0))
                     t.set_postfix({
                         'loss': losses.avg,
                         'top1': top1.avg,
-                        'top5': top5.avg,
                         'img_size': images.size(2),
                     })
                     t.update(1)
-        return losses.avg, top1.avg, top5.avg
+        return losses.avg, top1.avg
 
     def validate_all_resolution(self, epoch=0, is_test=True, net=None):
         if net is None:
@@ -436,14 +434,13 @@ class RunManager:
                     self.reset_running_statistics(net=net)
                 else:
                     self.reset_running_statistics(net=None, tag_FL=self.run_config.size_FL)
-                loss, top1, top5 = self.validate(epoch, is_test, net=net)
+                loss, top1 = self.validate(epoch, is_test, net=net)
                 loss_list.append(loss)
                 top1_list.append(top1)
-                top5_list.append(top5)
-            return img_size_list, loss_list, top1_list, top5_list
+            return img_size_list, loss_list, top1_list
         else:
-            loss, top1, top5 = self.validate(epoch, is_test, net=net)
-            return [self.run_config.data_provider.active_img_size], [loss], [top1], [top5]
+            loss, top1 = self.validate(epoch, is_test, net=net)
+            return [self.run_config.data_provider.active_img_size], [loss], [top1]
 
     def train_one_epoch(self, args, epoch, warmup_epochs=0, warmup_lr=0, tag_FL=-1):
         # switch to train mode
@@ -499,15 +496,15 @@ class RunManager:
                         output, aux_outputs = self.nets_FL[tag_FL](images)
                     else:
                         output, aux_outputs = self.net(images)
-                    loss1 = self.train_criterion(output, labels)
-                    loss2 = self.train_criterion(aux_outputs, labels)
+                    loss1 = self.train_criterion(output, labels.long())
+                    loss2 = self.train_criterion(aux_outputs, labels.long())
                     loss = loss1 + 0.4 * loss2
                 else:
                     if tag_FL >= 0:
                         output = self.nets_FL[tag_FL](images)
                     else:
                         output = self.net(images)
-                    loss = self.train_criterion(output, labels)
+                    loss = self.train_criterion(output, labels.long())
 
                 if args.teacher_model is None:
                     loss_type = 'ce'
@@ -540,15 +537,13 @@ class RunManager:
                     self.optimizer.step()
 
                 # measure accuracy and record loss
-                acc1, acc5 = accuracy(output, target, topk=(1, 5))
+                acc1 = accuracy(output, target, topk=(1,))
                 losses.update(loss.item(), images.size(0))
                 top1.update(acc1[0].item(), images.size(0))
-                top5.update(acc5[0].item(), images.size(0))
 
                 t.set_postfix({
                     'loss': losses.avg,
                     'top1': top1.avg,
-                    'top5': top5.avg,
                     'img_size': images.size(2),
                     'lr': new_lr,
                     'loss_type': loss_type,
@@ -556,7 +551,7 @@ class RunManager:
                 })
                 t.update(1)
                 end = time.time()
-        return losses.avg, top1.avg, top5.avg
+        return losses.avg, top1.avg
 
     def FedAvg(self):
         if self.run_config.flag_FL:
@@ -582,29 +577,27 @@ class RunManager:
 
         for epoch in range(self.start_epoch, self.run_config.n_epochs + warmup_epoch):
             if not self.run_config.flag_FL:
-                train_loss, train_top1, train_top5 = self.train_one_epoch(args, epoch, warmup_epoch, warmup_lr)
+                train_loss, train_top1 = self.train_one_epoch(args, epoch, warmup_epoch, warmup_lr)
             else:
-                train_loss, train_top1, train_top5 = [], [], []
+                train_loss, train_top1 = [], []
                 for _ in range(self.run_config.size_FL):
-                    loss, top1, top5 = self.train_one_epoch(args, epoch, warmup_epoch, warmup_lr, _)
+                    loss, top1 = self.train_one_epoch(args, epoch, warmup_epoch, warmup_lr, _)
                     train_loss.append(loss)
                     train_top1.append(top1)
-                    train_top5.append(top5)
                 train_loss = np.mean(train_loss)
                 train_top1 = np.mean(train_top1)
-                train_top5 = np.mean(train_top5)
                 self.FedAvg()
 
             if (epoch + 1) % self.run_config.validation_frequency == 0:
-                img_size, val_loss, val_acc, val_acc5 = self.validate_all_resolution(epoch=epoch, is_test=False)
+                img_size, val_loss, val_acc = self.validate_all_resolution(epoch=epoch, is_test=False)
 
                 is_best = np.mean(val_acc) > self.best_acc
                 self.best_acc = max(self.best_acc, np.mean(val_acc))
                 val_log = 'Valid [{0}/{1}]\tloss {2:.3f}\ttop-1 acc {3:.3f} ({4:.3f})'. \
                     format(epoch + 1 - warmup_epoch, self.run_config.n_epochs,
                            np.mean(val_loss), np.mean(val_acc), self.best_acc)
-                val_log += '\ttop-5 acc {0:.3f}\tTrain top-1 {top1:.3f}\tTrain top-5 {top5:.3f}\tloss {train_loss:.3f}\t'. \
-                    format(np.mean(val_acc5), top1=train_top1, top5=train_top5, train_loss=train_loss)
+                val_log += '\tTrain top-1 {top1:.3f}\tloss {train_loss:.3f}\t'. \
+                    format(top1=train_top1, train_loss=train_loss)
                 for i_s, v_a in zip(img_size, val_acc):
                     val_log += '(%d, %.3f), ' % (i_s, v_a)
                 self.write_log(val_log, prefix='valid', should_print=False)

@@ -7,7 +7,7 @@ from pymoo.visualization.scatter import Scatter
 from pymoo.util.nds.non_dominated_sorting import NonDominatedSorting
 from pymoo.model.decision_making import DecisionMaking, normalize, find_outliers_upper_tail, NeighborFinder
 
-_DEBUG = False
+_DEBUG = True
 
 
 class HighTradeoffPoints(DecisionMaking):
@@ -83,15 +83,34 @@ def main(args):
     I = np.append(I, 0)
 
     # create the supernet
+    n_channel_in = 3
+    n_classes = 1000
+    if 'CerebralInfarction.csv' in args.data:
+        n_channel_in = 60
+        n_classes = 2
+    elif 'ALF_Data.csv' in args.data:
+        n_channel_in = 28
+        n_classes = 2
+    elif 'LC25000' in args.data:
+        n_channel_in = 3
+        n_classes = 5
     from evaluator import OFAEvaluator
-    supernet = OFAEvaluator(model_path=args.supernet_path)
+    supernet = OFAEvaluator(n_channel_in=n_channel_in, n_classes=n_classes, model_path=args.supernet_path,
+                            flag_not_image=args.flag_not_image)
+    supernet_FR = OFAEvaluator(n_channel_in=n_channel_in, n_classes=n_classes, model_path=args.supernet_path,
+                               flag_not_image=args.flag_not_image, flag_fuzzy=True)
 
     for idx in I:
         save = os.path.join(args.save, "net-flops@{:.0f}".format(pf[idx, 1]))
         os.makedirs(save, exist_ok=True)
-        subnet, _ = supernet.sample({'ks': ps[idx]['ks'], 'e': ps[idx]['e'], 'd': ps[idx]['d']})
+        if not ps[idx]['f']:
+            subnet, _ = supernet.sample({'ks': ps[idx]['ks'], 'e': ps[idx]['e'], 'd': ps[idx]['d'], 'f': ps[idx]['f']})
+        else:
+            subnet, _ = supernet_FR.sample({'ks': ps[idx]['ks'], 'e': ps[idx]['e'], 'd': ps[idx]['d'], 'f': ps[idx]['f']})
         with open(os.path.join(save, "net.subnet"), 'w') as handle:
             json.dump(ps[idx], handle)
+        with open(os.path.join(save, "net.few_stats"), 'w') as handle:
+            json.dump({'top1': 100 - pf[idx][0], 'f2': pf[idx][1]}, handle)
         supernet.save_net_config(save, subnet, "net.config")
         supernet.save_net(save, subnet, "net.inherited")
 
@@ -107,16 +126,24 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--save', type=str, default='.tmp',
+    parser.add_argument('--save', type=str, default='.tmp99_evo00',
                         help='location of dir to save')
-    parser.add_argument('--expr', type=str, default='search-search-FR-FL-20211008-151010/iter_15.stats',
+    parser.add_argument('--expr', type=str, default='.save_test_evo00/perf_test.stats',
                         help='location of search experiment dir')
-    parser.add_argument('--prefer', type=str, default='top1#80+flops#150',
+    parser.add_argument('--prefer', type=str, default='top1#99+flops#150',
                         help='preferences in choosing architectures (top1#80+flops#150)')
     parser.add_argument('-n', type=int, default=1,
                         help='number of architectures desired')
-    parser.add_argument('--supernet_path', type=str, default='./model_best_FL_w1.0',
+    parser.add_argument('--supernet_path', type=str, default='./model_cur_FL_w1.0',
                         help='file path to supernet weights')
+    parser.add_argument('--data', type=str, default='../data/LC25000',
+                        help='location of the data corpus')
+    parser.add_argument('--dataset', type=str, default='LC25000',
+                        help='name of the dataset (imagenet, cifar10, cifar100, ...)')
+    parser.add_argument('--flag_not_image', action='store_true', default=False,
+                        help='The inputs are not images')
 
     cfgs = parser.parse_args()
+    print(cfgs)
+
     main(cfgs)

@@ -13,19 +13,20 @@ from pymoo.model.problem import Problem
 from pymoo.factory import get_performance_indicator
 from pymoo.algorithms.so_genetic_algorithm import GA
 from pymoo.util.nds.non_dominated_sorting import NonDominatedSorting
-from pymoo.factory import get_algorithm, get_crossover, get_mutation
+from pymoo.factory import get_algorithm, get_crossover, get_mutation, get_reference_directions
+
+from moead import MOEAD
 
 from search_space.ofa import OFASearchSpace
 from acc_predictor.factory import get_acc_predictor
 from utils import prepare_eval_folder, MySampling, BinaryCrossover, MyMutation
 
-_DEBUG = False
+_DEBUG = True
 if _DEBUG: from pymoo.visualization.scatter import Scatter
 
 
 class MSuNAS:
     def __init__(self, kwargs):
-        self.search_space = OFASearchSpace()
         self.save_path = kwargs.pop('save', '.tmp')  # path to save results
         self.str_time = kwargs.pop('str_time', None)  # time string
         self.resume = kwargs.pop('resume', None)  # resume search from a checkpoint
@@ -48,9 +49,30 @@ class MSuNAS:
         self.flag_fuzzy = kwargs.pop('flag_fuzzy', False)  # fuzzy layer
         self.flag_FL = kwargs.pop('flag_FL', False)  # FL
         self.size_FL = kwargs.pop('size_FL', 3)  # number of clients
+        self.flag_not_image = kwargs.pop('flag_not_image', False)  #
+        self.flag_windows_simulation = kwargs.pop('flag_windows_simulation', False)  #
         self.supernet_path = kwargs.pop(
             'supernet_path', './data/ofa_mbv3_d234_e346_k357_w1.0')  # supernet model path
+        self.name_alg = kwargs.pop('name_alg', 'NSGA-II')  #
+        self.type_decomp = kwargs.pop('type_decomp', 'tchebi_ed')  #
+        self.init_scheme = kwargs.pop('init_scheme', 0)  #
+        self.type_select = kwargs.pop('type_select', 'random')  #
+        self.utility_ini = kwargs.pop('utility_ini', 0.1)  #
+        self.utility_type = kwargs.pop('utility_type', 'descend')  #
+        self.ignore_weights = kwargs.pop('ignore_weights', False)  #
         self.latency = self.sec_obj if "cpu" in self.sec_obj or "gpu" in self.sec_obj else None
+        self.search_space = OFASearchSpace(self.flag_not_image)
+        self.n_channel_in = 3
+        self.n_classes = 1000
+        if 'CerebralInfarction.csv' in self.data:
+            self.n_channel_in = 60
+            self.n_classes = 2
+        elif 'ALF_Data.csv' in self.data:
+            self.n_channel_in = 28
+            self.n_classes = 2
+        elif 'LC25000' in self.data:
+            self.n_channel_in = 3
+            self.n_classes = 5
 
     def search(self):
 
@@ -109,6 +131,8 @@ class MSuNAS:
             print("fitting {}: RMSE = {:.4f}, Spearman's Rho = {:.4f}, Kendall's Tau = {:.4f}".format(
                 self.predictor, rmse, rho, tau))
 
+            if self.flag_windows_simulation:
+                os.makedirs(self.save_path, exist_ok=True)
             # dump the statistics
             with open(os.path.join(self.save_path, "iter_{}.stats".format(it)), "w") as handle:
                 json.dump({'archive': archive, 'candidates': archive[-self.n_iter:], 'hv': hv,
@@ -149,33 +173,41 @@ class MSuNAS:
         return archive
 
     def _evaluate(self, archs, it):
-        gen_dir = os.path.join(self.save_path, "iter_{}".format(it))
-        prepare_eval_folder(
-            gen_dir, archs, self.gpu, self.n_gpus, data=self.data, dataset=self.dataset,
-            n_classes=self.n_classes, supernet_path=self.supernet_path, str_time=self.str_time,
-            num_workers=self.n_workers, valid_size=self.vld_size, flag_fuzzy=self.flag_fuzzy,
-            flag_FL=self.flag_FL, size_FL=self.size_FL,
-            trn_batch_size=self.trn_batch_size, vld_batch_size=self.vld_batch_size,
-            n_epochs=self.n_epochs, test=self.test, latency=self.latency, verbose=False)
+        if not self.flag_windows_simulation:
+            gen_dir = os.path.join(self.save_path, "iter_{}".format(it))
+            prepare_eval_folder(
+                gen_dir, archs, self.gpu, self.n_gpus, data=self.data, dataset=self.dataset,
+                n_classes=self.n_classes, supernet_path=self.supernet_path, str_time=self.str_time,
+                num_workers=self.n_workers, valid_size=self.vld_size, flag_fuzzy=self.flag_fuzzy,
+                flag_FL=self.flag_FL, size_FL=self.size_FL, ignore_weights=self.ignore_weights,
+                trn_batch_size=self.trn_batch_size, vld_batch_size=self.vld_batch_size, flag_not_image=self.flag_not_image,
+                n_epochs=self.n_epochs, test=self.test, latency=self.latency, verbose=False)
 
-        # subprocess.call("sh {}/run_bash.sh".format(gen_dir), shell=True)
-        os.system("sh {}/run_bash.sh".format(gen_dir))
+            # subprocess.call("sh {}/run_bash.sh".format(gen_dir), shell=True)
+            os.system("sh {}/run_bash.sh".format(gen_dir))
 
-        top1_err, complexity = [], []
+            top1_err, complexity = [], []
 
-        for i in range(len(archs)):
-            try:
-                stats = json.load(open(os.path.join(gen_dir, "net_{}.stats".format(i))))
-            except FileNotFoundError:
-                # just in case the subprocess evaluation failed
-                stats = {'top1': [0], self.sec_obj: 1000}  # makes the solution artificially bad so it won't survive
-                # store this architecture to a separate in case we want to revisit after the search
-                os.makedirs(os.path.join(self.save_path, "failed"), exist_ok=True)
-                shutil.copy(os.path.join(gen_dir, "net_{}.subnet".format(i)),
-                            os.path.join(self.save_path, "failed", "it_{}_net_{}".format(it, i)))
+            for i in range(len(archs)):
+                try:
+                    stats = json.load(open(os.path.join(gen_dir, "net_{}.stats".format(i))))
+                except FileNotFoundError:
+                    # just in case the subprocess evaluation failed
+                    stats = {'top1': [0], self.sec_obj: 1000}  # makes the solution artificially bad so it won't survive
+                    # store this architecture to a separate in case we want to revisit after the search
+                    os.makedirs(os.path.join(self.save_path, "failed"), exist_ok=True)
+                    shutil.copy(os.path.join(gen_dir, "net_{}.subnet".format(i)),
+                                os.path.join(self.save_path, "failed", "it_{}_net_{}".format(it, i)))
 
-            top1_err.append(100 - stats['top1'][0])
-            complexity.append(stats[self.sec_obj])
+                top1_err.append(100 - stats['top1'][0])
+                complexity.append(stats[self.sec_obj])
+
+        else:
+            top1_err, complexity = [], []
+
+            for i in range(len(archs)):
+                top1_err.append(np.random.uniform(100))
+                complexity.append(10 + np.random.uniform(110))
 
         return top1_err, complexity
 
@@ -201,14 +233,37 @@ class MSuNAS:
         # initialize the candidate finding optimization problem
         problem = AuxiliarySingleLevelProblem(
             self.search_space, predictor, self.sec_obj,
-            {'n_classes': self.n_classes, 'model_path': self.supernet_path})
+            {'n_channel_in': self.n_channel_in, 'n_classes': self.n_classes, 'model_path': self.supernet_path,
+             'flag_fuzzy': self.flag_fuzzy, 'flag_not_image': self.flag_not_image,
+             'ignore_weights': self.ignore_weights}
+        )
 
         # initiate a multi-objective solver to optimize the problem
-        method = get_algorithm(
-            "nsga2", pop_size=40, sampling=nd_X,  # initialize with current nd archs
-            crossover=get_crossover("int_two_point", prob=0.9),
-            mutation=get_mutation("int_pm", eta=1.0),
-            eliminate_duplicates=True)
+        if self.name_alg == "NSGA-II":
+            method = get_algorithm(
+                "nsga2", pop_size=40, sampling=nd_X,  # initialize with current nd archs
+                crossover=get_crossover("int_two_point", prob=0.9),
+                mutation=get_mutation("int_pm", eta=1.0),
+                eliminate_duplicates=True)
+        elif self.name_alg == "MOEA/D":
+            all_X = np.array([self.search_space.encode(x[0]) for x in archive])
+            n_inv = len(all_X)
+            method = MOEAD(
+                get_reference_directions("das-dennis", 2, n_points=n_inv),
+                n_neighbors=int(n_inv/10),
+                decomposition=self.type_decomp,
+                prob_neighbor_mating=0.9,
+                sampling=all_X,
+                init_scheme=self.init_scheme,
+                type_select=self.type_select,
+                n_offsprings=40,
+                utility_ini=self.utility_ini,
+                utility_type=self.utility_type,
+                crossover=get_crossover("int_two_point", prob=0.9),
+                mutation=get_mutation("int_pm", eta=1.0),
+            )
+        else:
+            raise Exception("Unknown algorithm name - %s, which should be NSGA-II or MOEA/D" % (self.name_alg))
 
         # kick-off the search
         res = minimize(
@@ -268,10 +323,15 @@ class AuxiliarySingleLevelProblem(Problem):
         self.xu[-1] = int(len(self.ss.fuzzy) - 1)
         self.sec_obj = sec_obj
         self.lut = {'cpu': 'data/i7-8700K_lut.yaml'}
+        self.n_channel_in = supernet['n_channel_in']
 
         # supernet engine for measuring complexity
         self.engine = OFAEvaluator(
-            n_classes=supernet['n_classes'], model_path=supernet['model_path'])
+            n_channel_in=supernet['n_channel_in'],
+            n_classes=supernet['n_classes'], model_path=supernet['model_path'],
+            flag_fuzzy=supernet['flag_fuzzy'], flag_not_image=supernet['flag_not_image'],
+            ignore_weights=supernet['ignore_weights']
+        )
 
     def _evaluate(self, x, out, *args, **kwargs):
         f = np.full((x.shape[0], self.n_obj), np.nan)
@@ -282,7 +342,7 @@ class AuxiliarySingleLevelProblem(Problem):
             config = self.ss.decode(_x)
             subnet, _ = self.engine.sample({'ks': config['ks'], 'e': config['e'], 'd': config['d'], 'f': config['f']})
             sec_obj = self.sec_obj if self.sec_obj[:3] in ['cpu', 'gpu'] else None
-            info = get_net_info(subnet, (3, config['r'], config['r']),
+            info = get_net_info(subnet, (self.n_channel_in, config['r'], config['r']),
                                 measure_latency=sec_obj, print_info=False, clean=True, lut=self.lut)
             f[i, 0] = err
             f[i, 1] = info[self.sec_obj]
@@ -350,6 +410,8 @@ if __name__ == '__main__':
                         help='number of classes of the given dataset')
     parser.add_argument('--supernet_path', type=str, default='./data/ofa_mbv3_d234_e346_k357_w1.0',
                         help='file path to supernet weights')
+    parser.add_argument('--ignore_weights', action='store_true', default=False,
+                        help='whether or not use federated learning')
     parser.add_argument('--n_workers', type=int, default=4,
                         help='number of workers for dataloader per evaluation job')
     parser.add_argument('--vld_size', type=int, default=None,
@@ -368,8 +430,23 @@ if __name__ == '__main__':
                         help='whether or not use federated learning')
     parser.add_argument('--size_FL', type=int, default=0,
                         help='number of clients for federated learning')
+    parser.add_argument('--flag_not_image', action='store_true', default=False,
+                        help='The inputs are not images')
+    parser.add_argument('--flag_windows_simulation', action='store_true', default=False,
+                        help='The inputs are not images')
+    parser.add_argument('--name_alg', type=str, default='NSGA-II',
+                        help='The utilized MOEA. - NSGA-II or MOEA/D')
+    parser.add_argument('--type_decomp', type=str, default='tchebi_ed',
+                        help='The utilized decomposition. - tchebi/tchebi_ed/weighted-sum/pbi/asf/aasf/perp_dist')
+    parser.add_argument('--init_scheme', type=int, default=0,
+                        help='Initial arrangement scheme of the population of MOEA/D corresponding to ref points.')
+    parser.add_argument('--type_select', type=str, default='random',
+                        help='The type of selecting parents. - random/utility')
+    parser.add_argument('--utility_ini', type=float, default=0.1,
+                        help='initial utility value')
+    parser.add_argument('--utility_type', type=str, default='descend',
+                        help='descend/ascend/uniform')
     cfgs = parser.parse_args()
     cfgs.str_time = time.strftime("%Y%m%d-%H%M%S")
     cfgs.save = 'search-{}-{}'.format(cfgs.save, cfgs.str_time)
     main(cfgs)
-
