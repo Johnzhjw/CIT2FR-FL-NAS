@@ -14,23 +14,20 @@ results = {}
 
 for i in range(len(tmp_tag)):
     fig = plt.figure()
-    for file in glob.glob(os.path.join(".tmp-20211004-214637-"+tmp_tag[i]+"-*", "logs", "valid_console.txt")):
+    for file in glob.glob(os.path.join("../test00/.tmp-20211004-214637-"+tmp_tag[i]+"*", "logs", "valid_console.txt")):
         try:
             f = open(file, 'r')
             list1 = f.readlines()
             valid_top1 = [float(line.split('\t')[2].split(' ')[2]) for line in list1]
-            train_top1 = [float(line.split('\t')[4].split(' ')[2]) for line in list1]
+            train_top1 = [float(line.split('\t')[3].split(' ')[2]) for line in list1]
         finally:
             if f:
                 f.close()
 
-        tmp_str = '-'.join(file.split('\\')[0].split('-')[4:])
-        if '-noFL' in tmp_str:
-            tmp_str = '-' + '-'.join(tmp_str.split('-')[:-1])
-        elif 'noFL' == tmp_str:
+        tmp_str = '-' + '-'.join(file.split('\\')[1].split('-')[4:])
+        if tmp_str == '-':
             tmp_str = ''
-        else:
-            tmp_str = '-' + tmp_str
+
         plt.plot(epochs, train_top1, label='train'+tmp_str, linestyle=':')
         plt.plot(epochs, valid_top1, label='valid'+tmp_str)
 

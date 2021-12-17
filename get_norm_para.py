@@ -12,7 +12,7 @@ def getStat(data, num_workers=8):
     :return: (mean, std)
     '''
     device = 'cuda'
-    size_img = 32
+    size_img = 128
 
     ##
     start = torch.cuda.Event(enable_timing=True)

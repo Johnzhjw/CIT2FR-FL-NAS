@@ -30,11 +30,11 @@ def main(cfgs):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--save_path', type=str, default='.save_test_evo00',
+    parser.add_argument('--save_path', type=str, default='.save_test_evo10',
                         help='location of dir to save')
     parser.add_argument('--str_time', type=str, default=None,
                         help='time string')
-    parser.add_argument('--read_path', type=str, default='../evo00/search-search-FL-20211211-221358/*',
+    parser.add_argument('--read_path', type=str, default='../evo10/search-search-FL-20211214-094037',
                         help='read from where')
     parser.add_argument('--sec_obj', type=str, default='flops',
                         help='second objective to optimize simultaneously')

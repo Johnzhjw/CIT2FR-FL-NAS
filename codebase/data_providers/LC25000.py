@@ -187,7 +187,8 @@ class LC25000DataProvider(DataProvider):
 
     @property
     def normalize(self):
-        return transforms.Normalize(mean=[0.66946244, 0.53382075, 0.851768], std=[0.1291297, 0.17449944, 0.074376434])
+        # return transforms.Normalize(mean=[0.66946244, 0.53382075, 0.851768], std=[0.1291297, 0.17449944, 0.074376434])
+        return transforms.Normalize(mean=[0.72835726, 0.59946805, 0.87657416], std=[0.13199076, 0.17347044, 0.06519146])
 
     def build_train_transform(self, image_size=None, print_log=True):
         if image_size is None:

@@ -85,7 +85,7 @@ class OFAEvaluator:
                  n_classes=1000,
                  model_path='./data/ofa_mbv3_d234_e346_k357_w1.0',
                  kernel_size=None, exp_ratio=None, depth=None, flag_fuzzy=False,
-                 flag_not_image=False, ignore_weights=False):
+                 flag_not_image=False, ignore_weights=False, load_w_after_arch_sample=False):
         # default configurations
         if flag_not_image:
             self.kernel_size = [1] if kernel_size is None else kernel_size  # depth-wise conv kernel size
@@ -94,14 +94,17 @@ class OFAEvaluator:
         self.exp_ratio = [1, 2, 3, 4] if exp_ratio is None else exp_ratio  # expansion rate
         self.depth = [1, 2, 3, 4] if depth is None else depth  # number of MB block repetition
 
+        self.load_w_after_arch_sample = load_w_after_arch_sample
+        self.model_path = model_path
+
         if 'w1.0' in model_path:
             self.width_mult = 1.0
             if flag_fuzzy:
-                model_path = model_path.replace('w1.0', 'FR_w1.0')
+                self.model_path = model_path.replace('w1.0', 'FR_w1.0')
         elif 'w1.2' in model_path:
             self.width_mult = 1.2
             if flag_fuzzy:
-                model_path = model_path.replace('w1.2', 'FR_w1.2')
+                self.model_path = model_path.replace('w1.2', 'FR_w1.2')
         else:
             raise ValueError
 
@@ -112,8 +115,8 @@ class OFAEvaluator:
             flag_fuzzy=flag_fuzzy, n_channel_in=n_channel_in, flag_not_image=flag_not_image
         )
 
-        if not ignore_weights:
-            init = torch.load(model_path, map_location='cpu')['state_dict']
+        if not ignore_weights and not load_w_after_arch_sample:
+            init = torch.load(self.model_path, map_location='cpu')['state_dict']
             self.engine.load_weights_from_net(init)
 
     def sample(self, config=None):
@@ -148,7 +151,12 @@ class OFAEvaluator:
     @staticmethod
     def eval(run_config, subnet,
              n_epochs=0, resolution=224, is_test=True, log_dir='.tmp/eval', measure_latency=None, no_logs=False,
-             reset_running_statistics=True):
+             reset_running_statistics=True,
+             ignore_weights=False, load_w_after_arch_sample=False, model_path=None):
+
+        if not ignore_weights and load_w_after_arch_sample:
+            init = torch.load(model_path, map_location='cpu')['state_dict']
+            subnet.load_state_dict(init)
 
         lut = {'cpu': 'data/i7-8700K_lut.yaml'}
 
@@ -251,6 +259,8 @@ def main(args):
         print('The number of output classes is wrong (%d != %d), please check!' %
               (n_classes, run_config.data_provider.n_classes))
 
+    model_path = args.supernet_path
+
     print('Evaluation mode: {}'.format(mode))
     if mode == 'config':
         net_config = json.load(open(args.config))
@@ -271,9 +281,11 @@ def main(args):
         evaluator = OFAEvaluator(n_channel_in=run_config.data_provider.n_channels,
                                  n_classes=run_config.data_provider.n_classes,
                                  model_path=args.supernet_path, flag_fuzzy=flag_fuzzy,
-                                 flag_not_image=args.flag_not_image, ignore_weights=args.ignore_weights)
+                                 flag_not_image=args.flag_not_image, ignore_weights=args.ignore_weights,
+                                 load_w_after_arch_sample=args.load_w_after_arch_sample)
         subnet, _ = evaluator.sample({'ks': config['ks'], 'e': config['e'], 'd': config['d'], 'f': config['f']})
         resolution = config['r']
+        model_path = evaluator.model_path
 
     else:
         raise NotImplementedError
@@ -285,7 +297,9 @@ def main(args):
         run_config, subnet, log_dir=args.log_dir,
         n_epochs=args.n_epochs,
         resolution=resolution, is_test=args.test, measure_latency=args.latency,
-        no_logs=(not args.verbose), reset_running_statistics=args.reset_running_statistics)
+        no_logs=(not args.verbose), reset_running_statistics=args.reset_running_statistics,
+        ignore_weights=args.ignore_weights, load_w_after_arch_sample=args.load_w_after_arch_sample,
+        model_path=model_path)
 
 
 if __name__ == '__main__':
@@ -346,6 +360,8 @@ if __name__ == '__main__':
                         help='number of clients for federated learning')
     parser.add_argument('--flag_not_image', action='store_true', default=False,
                         help='The inputs are not images')
+    parser.add_argument('--load_w_after_arch_sample', action='store_true', default=False,
+                        help='Load weights after the architecture is sampled')
     cfgs = parser.parse_args()
 
     if cfgs.str_time is None:

@@ -29,7 +29,6 @@ class HighTradeoffPoints(DecisionMaking):
 
         # for each solution in the set calculate the least amount of improvement per unit deterioration
         for i in range(n):
-
             # for each neighbour in a specific radius of that solution
             neighbors = neighbors_finder.find(i)
 
@@ -81,6 +80,10 @@ def main(args):
 
     # always add most accurate architectures
     I = np.append(I, 0)
+    I = np.array([int(_) for _ in range(len(pf))], dtype=np.int64)
+    I = I[pf.reshape(-1, 2)[:, 0] <= preferences['top1']]
+    if len(I) == 0:
+        I = np.append(I, 0)
 
     # create the supernet
     n_channel_in = 3
@@ -106,7 +109,8 @@ def main(args):
         if not ps[idx]['f']:
             subnet, _ = supernet.sample({'ks': ps[idx]['ks'], 'e': ps[idx]['e'], 'd': ps[idx]['d'], 'f': ps[idx]['f']})
         else:
-            subnet, _ = supernet_FR.sample({'ks': ps[idx]['ks'], 'e': ps[idx]['e'], 'd': ps[idx]['d'], 'f': ps[idx]['f']})
+            subnet, _ = supernet_FR.sample(
+                {'ks': ps[idx]['ks'], 'e': ps[idx]['e'], 'd': ps[idx]['d'], 'f': ps[idx]['f']})
         with open(os.path.join(save, "net.subnet"), 'w') as handle:
             json.dump(ps[idx], handle)
         with open(os.path.join(save, "net.few_stats"), 'w') as handle:
@@ -115,6 +119,8 @@ def main(args):
         supernet.save_net(save, subnet, "net.inherited")
 
     if _DEBUG:
+        print('The whole nondominated pf:', pf)
+        print('The selected nondominated pf:', pf[I])
         print(ps[I])
         plot = Scatter()
         plot.add(pf, alpha=0.2)
@@ -134,7 +140,7 @@ if __name__ == '__main__':
                         help='preferences in choosing architectures (top1#80+flops#150)')
     parser.add_argument('-n', type=int, default=1,
                         help='number of architectures desired')
-    parser.add_argument('--supernet_path', type=str, default='./model_cur_FL_w1.0',
+    parser.add_argument('--supernet_path', type=str, default='./model_1_cur_FL_w1.0',
                         help='file path to supernet weights')
     parser.add_argument('--data', type=str, default='../data/LC25000',
                         help='location of the data corpus')

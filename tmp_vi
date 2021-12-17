@@ -1,3 +1,0 @@
-nohup python evaluator.py --subnet ./net_0.subnet --data ../../data/LC25000 --dataset LC25000 --n_classes 5 --supernet_path ./model_best_FL_0_w1.0 --save net_0_FR_FL10_1.stats --trn_batch_size 128 --vld_batch_size 200 --num_workers 4 --n_epochs 200 --resolution 224 --flag_FL --size_FL 10 --str_time 20211004-214637-0-FR-FL10_1 --reset_running_statistics --flag_fuzzy >> NET_0_FR_FL10_1.log 2>&1
-
-nohup python evaluator.py --subnet ./net_0.subnet --data ../../data/LC25000 --dataset LC25000 --n_classes 5 --supernet_path ./model_best_FL_0_w1.0 --save net_0_FL10_1.stats --trn_batch_size 128 --vld_batch_size 200 --num_workers 4 --n_epochs 200 --resolution 224 --flag_FL --size_FL 10 --str_time 20211004-214637-0-FL10_1 --reset_running_statistics >> NET_0_FL10_1.log 2>&1
